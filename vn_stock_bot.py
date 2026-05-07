@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ╔══════════════════════════════════════════════════════════════╗
-║         VN STOCK ANALYST BOT  ·  Powered by AI              ║
+║         VN STOCK ANALYST BOT  ·  V2 (Fixed Syntax)              ║
 ║         Phân tích kỹ thuật thị trường chứng khoán VN        ║
 ╚══════════════════════════════════════════════════════════════╝
 
@@ -139,6 +139,13 @@ def _normalize_df(df: pd.DataFrame) -> Optional[pd.DataFrame]:
 
     return df
 
+
+
+def find_support_resistance(df: pd.DataFrame, window: int = 20):
+    """Tìm ngưỡng hỗ trợ (đáy) và kháng cự (đỉnh) trong chu kỳ gần nhất."""
+    low_recent = df["low"].rolling(window=window).min().iloc[-1]
+    high_recent = df["high"].rolling(window=window).max().iloc[-1]
+    return low_recent, high_recent
 
 def fetch_stock_data(symbol: str, days: int = HISTORY_DAYS) -> pd.DataFrame:
     """
@@ -525,11 +532,21 @@ def score_stock(df: pd.DataFrame, ind: dict) -> dict:
     else:
         signal = "SELL";       signal_color = "red"
 
-    atr_abs     = ind["atr"].iloc[-1]
-    stop_loss   = round((last - 1.5 * atr_abs) / 100) * 100
-    target_1    = round((last + 2.0 * atr_abs) / 100) * 100
-    target_2    = round((last + 3.5 * atr_abs) / 100) * 100
-    risk_reward = (target_1 - last) / max(last - stop_loss, 1)
+    # --- CẬP NHẬT LOGIC R:R THỰC TẾ ---
+    support_20, resistance_20 = find_support_resistance(df, window=20)
+    atr_abs = ind["atr"].iloc[-1]
+    
+    # Dừng lỗ: Dưới hỗ trợ 20 phiên 1%
+    stop_loss = round((support_20 * 0.99) / 100) * 100
+    # Target 1: Kháng cự cũ (hoặc tối thiểu 2 lần ATR)
+    target_1 = max(resistance_20, last + 2.0 * atr_abs)
+    target_1 = round(target_1 / 100) * 100
+    # Target 2: Kỳ vọng xa hơn
+    target_2 = round((target_1 + 1.5 * atr_abs) / 100) * 100
+    
+    risk = max(last - stop_loss, 1)
+    reward = target_1 - last
+    risk_reward = reward / risk
 
     return {
         "composite_score": composite,
